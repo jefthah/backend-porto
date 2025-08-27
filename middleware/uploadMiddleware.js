@@ -11,9 +11,9 @@ import { CloudinaryStorage } from 'multer-storage-cloudinary';
 
 // Konfigurasi Cloudinary
 cloudinary.config({
-  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+  cloud_name: process.env.CLOUDINARY_NAME, // Sesuaikan dengan Vercel
   api_key: process.env.CLOUDINARY_API_KEY,
-  api_secret: process.env.CLOUDINARY_API_SECRET,
+  api_secret: process.env.CLOUDINARY_SECRET_KEY, // Sesuaikan dengan Vercel
 });
 
 // Setup storage untuk Cloudinary
