@@ -1,4 +1,4 @@
-// api/index.js - Entry point untuk Vercel
+// api/index.js
 import express from "express";
 import cors from "cors";
 import dotenv from "dotenv";
@@ -16,10 +16,10 @@ app.set("trust proxy", true);
 const allowedOrigins = [
   "http://localhost:5173",
   "http://localhost:3000",
-  "https://your-frontend.vercel.app" // Ganti dengan URL frontend Anda
+  "http://localhost:5174"
 ];
 
-// Add dynamic origins from env
+// Add from environment variable
 if (process.env.FRONTEND_URL) {
   process.env.FRONTEND_URL.split(",").forEach(url => {
     const trimmed = url.trim();
@@ -32,14 +32,10 @@ if (process.env.FRONTEND_URL) {
 app.use(
   cors({
     origin: (origin, cb) => {
-      // Allow requests with no origin (Postman, server-to-server)
       if (!origin) return cb(null, true);
-      
       if (allowedOrigins.includes(origin)) {
         return cb(null, true);
       }
-      
-      // Log untuk debugging
       console.log("Blocked CORS origin:", origin);
       return cb(new Error("Not allowed by CORS"));
     },
@@ -52,8 +48,14 @@ app.use(
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// Database middleware - connect per request untuk serverless
+// CRITICAL: Connect database BEFORE routes!
+// For serverless, connect per request
 app.use(async (req, res, next) => {
+  // Skip for health check
+  if (req.path === '/api/health' || req.path === '/api' || req.path === '/') {
+    return next();
+  }
+  
   try {
     await connectDB();
     next();
@@ -62,22 +64,21 @@ app.use(async (req, res, next) => {
     res.status(500).json({ 
       success: false, 
       message: "Database connection failed",
-      error: process.env.NODE_ENV === "development" ? error.message : undefined
+      error: error.message
     });
   }
 });
 
-// API Routes
+// API Routes (AFTER database middleware)
 app.use("/api/auth", authRoutes);
 app.use("/api/projects", projectRoutes);
 
-// Health check
+// Health check (no DB needed)
 app.get("/api/health", (req, res) => {
   res.json({ 
     success: true,
     message: "API is healthy",
-    timestamp: new Date().toISOString(),
-    environment: process.env.NODE_ENV || "development"
+    timestamp: new Date().toISOString()
   });
 });
 
@@ -95,7 +96,6 @@ app.get("/api", (req, res) => {
   });
 });
 
-// Root redirect
 app.get("/", (req, res) => {
   res.redirect("/api");
 });
@@ -108,9 +108,14 @@ app.use((req, res) => {
   });
 });
 
-// Error handler
+// Error handler - IMPORTANT for debugging
 app.use((err, req, res, next) => {
-  console.error("Error:", err);
+  console.error("Error details:", {
+    message: err.message,
+    stack: err.stack,
+    name: err.name,
+    code: err.code
+  });
   
   // Multer errors
   if (err.name === "MulterError") {
@@ -122,37 +127,24 @@ app.use((err, req, res, next) => {
     }
     return res.status(400).json({
       success: false,
-      message: err.message
+      message: `Upload error: ${err.message}`
     });
   }
   
-  // Validation errors
-  if (err.name === "ValidationError") {
-    return res.status(400).json({
+  // MongoDB errors
+  if (err.name === "MongoError" || err.name === "MongooseError") {
+    return res.status(500).json({
       success: false,
-      message: "Validation error",
-      errors: Object.values(err.errors).map(e => e.message)
-    });
-  }
-  
-  // MongoDB duplicate key error
-  if (err.code === 11000) {
-    return res.status(400).json({
-      success: false,
-      message: "Duplicate field value"
+      message: "Database error",
+      error: process.env.NODE_ENV === "development" ? err.message : undefined
     });
   }
   
   // Default error
   res.status(err.status || 500).json({ 
     success: false, 
-    message: err.message || "Internal server error",
-    ...(process.env.NODE_ENV === "development" && { 
-      stack: err.stack,
-      details: err
-    })
+    message: err.message || "Internal server error"
   });
 });
 
-// Export untuk Vercel
 export default app;
