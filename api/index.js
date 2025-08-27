@@ -1,4 +1,4 @@
-// api/index.js - HAPUS static files serving!
+// api/index.js - Entry point untuk Vercel
 import express from "express";
 import cors from "cors";
 import dotenv from "dotenv";
@@ -12,18 +12,35 @@ const app = express();
 
 app.set("trust proxy", true);
 
-const allowedOrigins = (process.env.FRONTEND_URL || "http://localhost:5173")
-  .split(",")
-  .map((s) => s.trim());
+// CORS configuration
+const allowedOrigins = [
+  "http://localhost:5173",
+  "http://localhost:3000",
+  "https://your-frontend.vercel.app" // Ganti dengan URL frontend Anda
+];
+
+// Add dynamic origins from env
+if (process.env.FRONTEND_URL) {
+  process.env.FRONTEND_URL.split(",").forEach(url => {
+    const trimmed = url.trim();
+    if (trimmed && !allowedOrigins.includes(trimmed)) {
+      allowedOrigins.push(trimmed);
+    }
+  });
+}
 
 app.use(
   cors({
     origin: (origin, cb) => {
+      // Allow requests with no origin (Postman, server-to-server)
       if (!origin) return cb(null, true);
+      
       if (allowedOrigins.includes(origin)) {
         return cb(null, true);
       }
-      console.log("Blocked origin:", origin);
+      
+      // Log untuk debugging
+      console.log("Blocked CORS origin:", origin);
       return cb(new Error("Not allowed by CORS"));
     },
     credentials: true,
@@ -35,10 +52,7 @@ app.use(
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// HAPUS INI - Jangan serve static files!
-// app.use("/uploads", express.static(path.join(process.cwd(), "uploads")));
-
-// Connect to database
+// Database middleware - connect per request untuk serverless
 app.use(async (req, res, next) => {
   try {
     await connectDB();
@@ -67,8 +81,8 @@ app.get("/api/health", (req, res) => {
   });
 });
 
-// Root
-app.get("/", (req, res) => {
+// Root endpoint
+app.get("/api", (req, res) => {
   res.json({ 
     success: true,
     message: "3D Portfolio Backend API", 
@@ -79,6 +93,11 @@ app.get("/", (req, res) => {
       health: "/api/health"
     }
   });
+});
+
+// Root redirect
+app.get("/", (req, res) => {
+  res.redirect("/api");
 });
 
 // 404 handler
@@ -93,6 +112,7 @@ app.use((req, res) => {
 app.use((err, req, res, next) => {
   console.error("Error:", err);
   
+  // Multer errors
   if (err.name === "MulterError") {
     if (err.code === "LIMIT_FILE_SIZE") {
       return res.status(400).json({
@@ -100,8 +120,30 @@ app.use((err, req, res, next) => {
         message: "File too large. Maximum size is 5MB"
       });
     }
+    return res.status(400).json({
+      success: false,
+      message: err.message
+    });
   }
   
+  // Validation errors
+  if (err.name === "ValidationError") {
+    return res.status(400).json({
+      success: false,
+      message: "Validation error",
+      errors: Object.values(err.errors).map(e => e.message)
+    });
+  }
+  
+  // MongoDB duplicate key error
+  if (err.code === 11000) {
+    return res.status(400).json({
+      success: false,
+      message: "Duplicate field value"
+    });
+  }
+  
+  // Default error
   res.status(err.status || 500).json({ 
     success: false, 
     message: err.message || "Internal server error",
@@ -112,4 +154,5 @@ app.use((err, req, res, next) => {
   });
 });
 
+// Export untuk Vercel
 export default app;
