@@ -10,7 +10,7 @@ dotenv.config();
 import connectDB from "./config/database.js";
 import authRoutes from "./routes/authRoutes.js";
 import projectRoutes from "./routes/projectRoutes.js";
-
+import contactRoutes from './routes/contactRoutes.js'; 
 const app = express();
 
 // Penting di balik proxy (Vercel/Cloudflare)
@@ -40,10 +40,13 @@ app.use("/uploads", express.static(path.join(process.cwd(), "uploads")));
 // Routes
 app.use("/api/auth", authRoutes);
 app.use("/api/projects", projectRoutes);
+app.use('/api/contact', contactRoutes); // Pindahkan ke sini, hapus baris 49-50
 
 // Healthcheck
 app.get("/api/health", (_req, res) => res.json({ ok: true }));
 app.get("/", (_req, res) => res.json({ message: "API is running!" }));
+
+
 
 // 404 handler
 app.use((req, res) => {

@@ -2,9 +2,10 @@
 import Project from "../models/project.js";
 import { deleteFromCloudinary } from "../middleware/uploadMiddleware.js";
 
+
 export const createProject = async (req, res) => {
   try {
-    const { title, description, githubRepo, deployLink } = req.body;
+    const { title, description, techStack, githubRepo, deployLink, demoVideoUrl } = req.body;
     
     if (!title) {
       return res.status(400).json({ 
@@ -13,15 +14,26 @@ export const createProject = async (req, res) => {
       });
     }
 
-    // PENTING: Gunakan req.file.path dari Cloudinary, BUKAN local path!
-    const imageUrl = req.file ? req.file.path : ""; // Cloudinary return URL lengkap di .path
+    const imageUrl = req.file ? req.file.path : "";
+
+    // Parse techStack if it comes as string (from FormData)
+    let parsedTechStack = [];
+    if (techStack) {
+      try {
+        parsedTechStack = typeof techStack === 'string' ? JSON.parse(techStack) : techStack;
+      } catch (e) {
+        parsedTechStack = [];
+      }
+    }
 
     const project = await Project.create({
       title,
       description: description || "",
+      techStack: parsedTechStack, // ADD THIS
       githubRepo: githubRepo || "",
       deployLink: deployLink || "",
-      imageUrl, // URL dari Cloudinary (https://res.cloudinary.com/...)
+      demoVideoUrl: demoVideoUrl || "",
+      imageUrl,
     });
 
     res.status(201).json({ 
@@ -38,58 +50,9 @@ export const createProject = async (req, res) => {
   }
 };
 
-export const listProjects = async (req, res) => {
-  try {
-    const projects = await Project.find()
-      .sort({ createdAt: -1 })
-      .select("-__v")
-      .lean();
-
-    // Tidak perlu manipulasi URL, Cloudinary sudah return URL lengkap
-    res.json({ 
-      success: true, 
-      count: projects.length,
-      data: projects 
-    });
-  } catch (error) {
-    console.error("List projects error:", error);
-    res.status(500).json({ 
-      success: false, 
-      message: "Failed to fetch projects" 
-    });
-  }
-};
-
-export const getProject = async (req, res) => {
-  try {
-    const project = await Project.findById(req.params.id)
-      .select("-__v")
-      .lean();
-    
-    if (!project) {
-      return res.status(404).json({ 
-        success: false, 
-        message: "Project not found" 
-      });
-    }
-
-    // Tidak perlu manipulasi URL
-    res.json({ 
-      success: true, 
-      data: project 
-    });
-  } catch (error) {
-    console.error("Get project error:", error);
-    res.status(500).json({ 
-      success: false, 
-      message: "Failed to fetch project" 
-    });
-  }
-};
-
 export const updateProject = async (req, res) => {
   try {
-    const { title, description, githubRepo, deployLink } = req.body;
+    const { title, description, techStack, githubRepo, deployLink, demoVideoUrl } = req.body;
     
     const existingProject = await Project.findById(req.params.id);
     if (!existingProject) {
@@ -104,14 +67,22 @@ export const updateProject = async (req, res) => {
     if (description !== undefined) updateData.description = description;
     if (githubRepo !== undefined) updateData.githubRepo = githubRepo;
     if (deployLink !== undefined) updateData.deployLink = deployLink;
+    if (demoVideoUrl !== undefined) updateData.demoVideoUrl = demoVideoUrl;
     
-    // Handle new image upload
+    // Parse and update techStack
+    if (techStack !== undefined) {
+      try {
+        updateData.techStack = typeof techStack === 'string' ? JSON.parse(techStack) : techStack;
+      } catch (e) {
+        updateData.techStack = [];
+      }
+    }
+    
     if (req.file) {
-      // Delete old image from Cloudinary
       if (existingProject.imageUrl) {
         await deleteFromCloudinary(existingProject.imageUrl);
       }
-      updateData.imageUrl = req.file.path; // URL baru dari Cloudinary
+      updateData.imageUrl = req.file.path;
     }
     
     const project = await Project.findByIdAndUpdate(
@@ -134,24 +105,70 @@ export const updateProject = async (req, res) => {
   }
 };
 
-export const deleteProject = async (req, res) => {
+export const listProjects = async (req, res) => {
   try {
-    const project = await Project.findById(req.params.id);
-    
+    const projects = await Project.find()
+      .sort({ createdAt: -1 })
+      .select("-__v")
+      .lean();
+
+    res.json({
+      success: true,
+      count: projects.length,
+      data: projects,
+    });
+  } catch (error) {
+    console.error("List projects error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to fetch projects",
+    });
+  }
+};
+
+export const getProject = async (req, res) => {
+  try {
+    const project = await Project.findById(req.params.id).select("-__v").lean();
+
     if (!project) {
       return res.status(404).json({
         success: false,
         message: "Project not found",
       });
     }
-    
+
+    // Tidak perlu manipulasi URL
+    res.json({
+      success: true,
+      data: project,
+    });
+  } catch (error) {
+    console.error("Get project error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to fetch project",
+    });
+  }
+};
+
+export const deleteProject = async (req, res) => {
+  try {
+    const project = await Project.findById(req.params.id);
+
+    if (!project) {
+      return res.status(404).json({
+        success: false,
+        message: "Project not found",
+      });
+    }
+
     // Delete image from Cloudinary
     if (project.imageUrl) {
       await deleteFromCloudinary(project.imageUrl);
     }
-    
+
     await project.deleteOne();
-    
+
     res.json({
       success: true,
       message: "Project deleted successfully",
