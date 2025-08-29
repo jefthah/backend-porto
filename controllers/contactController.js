@@ -13,7 +13,7 @@ const createTransporter = () => {
     throw new Error(`EMAIL_USER or EMAIL_PASS missing. EMAIL_USER exists: ${!!process.env.EMAIL_USER}, EMAIL_PASS exists: ${!!process.env.EMAIL_PASS}`);
   }
 
-  return nodemailer.createTransport({
+  return nodemailer.createTransport8({
     host: "smtp.gmail.com",
     port: 465,
     secure: true,
