@@ -5,6 +5,7 @@ import dotenv from "dotenv";
 import connectDB from "../config/database.js";
 import authRoutes from "../routes/authRoutes.js";
 import projectRoutes from "../routes/projectRoutes.js";
+import contactRoutes from "../routes/contactRoutes.js";
 
 dotenv.config();
 
@@ -52,7 +53,7 @@ app.use(express.urlencoded({ extended: true }));
 // For serverless, connect per request
 app.use(async (req, res, next) => {
   // Skip for health check
-  if (req.path === '/api/health' || req.path === '/api' || req.path === '/') {
+  if (req.path === '/api/health' || req.path === '/api' || req.path === '/' || req.path === '/api/contact' ) {
     return next();
   }
   
@@ -73,6 +74,8 @@ app.use(async (req, res, next) => {
 app.use("/api/auth", authRoutes);
 app.use("/api/projects", projectRoutes);
 
+app.use("/api/contact", contactRoutes);
+
 // Health check (no DB needed)
 app.get("/api/health", (req, res) => {
   res.json({ 
@@ -91,7 +94,8 @@ app.get("/api", (req, res) => {
     endpoints: {
       auth: "/api/auth",
       projects: "/api/projects",
-      health: "/api/health"
+      health: "/api/health",
+      contact: "/api/contact"
     }
   });
 });
