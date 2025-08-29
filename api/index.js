@@ -17,7 +17,10 @@ app.set("trust proxy", true);
 const allowedOrigins = [
   "http://localhost:5173",
   "http://localhost:3000",
-  "http://localhost:5174"
+  "http://localhost:5174",
+  "http://localhost:4173", // Vite preview
+  "https://3d-portfolio-spline.vercel.app", // Your production frontend
+  "https://portfolio-spline.vercel.app", // Alternative if you change domain
 ];
 
 // Add from environment variable
@@ -30,21 +33,61 @@ if (process.env.FRONTEND_URL) {
   });
 }
 
+// Log allowed origins for debugging
+console.log("Allowed Origins:", allowedOrigins);
+
+// Configure CORS
 app.use(
   cors({
-    origin: (origin, cb) => {
-      if (!origin) return cb(null, true);
+    origin: (origin, callback) => {
+      // Allow requests with no origin (like mobile apps or Postman)
+      if (!origin) return callback(null, true);
+      
+      // Check if the origin is allowed
       if (allowedOrigins.includes(origin)) {
-        return cb(null, true);
+        return callback(null, true);
       }
+      
+      // Log blocked origin for debugging
       console.log("Blocked CORS origin:", origin);
-      return cb(new Error("Not allowed by CORS"));
+      return callback(new Error(`CORS Error: Origin ${origin} not allowed`));
     },
     credentials: true,
-    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-    allowedHeaders: ["Content-Type", "Authorization"],
+    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
+    allowedHeaders: [
+      "Content-Type", 
+      "Authorization", 
+      "X-Requested-With",
+      "Accept",
+      "Origin"
+    ],
+    exposedHeaders: ["X-Total-Count", "X-Page", "X-Per-Page"],
+    maxAge: 86400, // 24 hours
+    optionsSuccessStatus: 200 // Some legacy browsers choke on 204
   })
 );
+
+// Add headers middleware for additional CORS support
+app.use((req, res, next) => {
+  // Get origin from request
+  const origin = req.headers.origin;
+  
+  // If origin is in allowed list, set headers
+  if (origin && allowedOrigins.includes(origin)) {
+    res.setHeader('Access-Control-Allow-Origin', origin);
+    res.setHeader('Access-Control-Allow-Credentials', 'true');
+  }
+  
+  // Handle preflight
+  if (req.method === 'OPTIONS') {
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, PATCH, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, Accept, Origin');
+    res.setHeader('Access-Control-Max-Age', '86400');
+    return res.sendStatus(200);
+  }
+  
+  next();
+});
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
@@ -52,8 +95,9 @@ app.use(express.urlencoded({ extended: true }));
 // CRITICAL: Connect database BEFORE routes!
 // For serverless, connect per request
 app.use(async (req, res, next) => {
-  // Skip for health check
-  if (req.path === '/api/health' || req.path === '/api' || req.path === '/' || req.path === '/api/contact' ) {
+  // Skip for health check and static endpoints
+  const skipPaths = ['/api/health', '/api', '/', '/api/contact'];
+  if (skipPaths.includes(req.path)) {
     return next();
   }
   
@@ -65,7 +109,7 @@ app.use(async (req, res, next) => {
     res.status(500).json({ 
       success: false, 
       message: "Database connection failed",
-      error: error.message
+      error: process.env.NODE_ENV === "development" ? error.message : "Internal server error"
     });
   }
 });
@@ -73,7 +117,6 @@ app.use(async (req, res, next) => {
 // API Routes (AFTER database middleware)
 app.use("/api/auth", authRoutes);
 app.use("/api/projects", projectRoutes);
-
 app.use("/api/contact", contactRoutes);
 
 // Health check (no DB needed)
@@ -81,7 +124,10 @@ app.get("/api/health", (req, res) => {
   res.json({ 
     success: true,
     message: "API is healthy",
-    timestamp: new Date().toISOString()
+    timestamp: new Date().toISOString(),
+    cors: {
+      allowedOrigins: process.env.NODE_ENV === "development" ? allowedOrigins : "configured"
+    }
   });
 });
 
@@ -116,10 +162,19 @@ app.use((req, res) => {
 app.use((err, req, res, next) => {
   console.error("Error details:", {
     message: err.message,
-    stack: err.stack,
+    stack: process.env.NODE_ENV === "development" ? err.stack : undefined,
     name: err.name,
     code: err.code
   });
+  
+  // CORS errors
+  if (err.message && err.message.includes("CORS")) {
+    return res.status(403).json({
+      success: false,
+      message: "CORS policy violation",
+      error: process.env.NODE_ENV === "development" ? err.message : "Access denied"
+    });
+  }
   
   // Multer errors
   if (err.name === "MulterError") {
